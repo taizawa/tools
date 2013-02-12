@@ -1,0 +1,158 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from __future__ import with_statement
+import optparse
+import re
+import sys
+
+"""
+Google App Engine Request Logs
+
+"""
+
+
+USAGE = """%prog [-d <domain>] [-p <pattern>] [OPTIONS] FILE
+
+Examples:
+  $ %prog -d "gigei.jp" -p "(?:POST /control/_task/profiles)" path/to/log | less
+
+  $ %prog -d "gigei.jp" -p "(?:POST /admin.*|POST /control/_task.*)" path/to/log
+
+  $ %prog -d "gigei.jp" -ip 'successfully login' path/to/log
+
+  $ cat path/to/log | %prog -d "gigei.co.jp"
+
+  $ gzip -cd path/to/log.gz | %prog -d "gigei.co.jp"
+
+  $ find . -name '*detail*201202*.gz' | xargs gzip -cd | %prog -d "gigei.co.jp"
+
+  $ tail -f request_logs_detail.log | %prog -ip "error"
+"""
+
+
+def is_request_line(line):
+	return False if line.startswith("\t") else True
+
+def is_block_to_out(lines, label, pattern, invert=False):
+	if lines:
+		match = True
+		if pattern:
+			match = False
+			for line in lines:
+				if pattern.search(line):
+					match = True
+					break
+
+		if match and label:
+			match = False
+			for line in lines:
+				if line.find(label) > -1:
+					match = True
+					break
+
+		if invert:
+			match = not match
+
+		return match
+
+	return False
+
+def flush(lines, level=0, with_color=False):
+	if not lines:
+		return
+
+	levels = [str(v) for v in range(0, 5)]
+
+	if level > 0:
+		for line in lines[1:]:
+			_line = line.lstrip('\t')
+			if len(_line) and _line[0] in levels:
+				if int(_line[0]) >= level:
+					break
+		else:
+			return
+
+	e_fmt = '%s' if not with_color else '\x1b[31m%s\x1b[0m'
+	w_fmt = '%s' if not with_color else '\x1b[35m%s\x1b[0m'
+	_level = 0
+	out = sys.stdout
+
+	out.write(lines[0])
+
+	for line in lines[1:]:
+		_line = line.lstrip('\t')
+		if len(_line) and _line[0] in levels:
+			_level = int(_line[0])
+		if _level > 2:
+			out.write(e_fmt % line)
+		elif _level == 2:
+			out.write(w_fmt % line)
+		else:
+			out.write(line)
+
+	#out.write("--\n")
+
+
+def search(infile, label, pattern, level=0, invert=False, with_color=False):
+	with infile as f:
+		buff = None
+		for line in f:
+			if is_request_line(line):
+				if is_block_to_out(buff, label, pattern, invert=invert):
+					flush(buff, level=level, with_color=with_color)
+				buff = [line]
+			elif buff:
+				buff.append(line)
+			else:
+				break
+
+def main():
+	parser = optparse.OptionParser(usage=USAGE)
+	parser.add_option("-d", "--domain", dest="domain",
+	                  help=u"Search for DOMAIN (e.g. example.com)")
+	parser.add_option("-e", "--email", dest="email",
+	                  help=u"Search for EMAIL (e.g. foo@example.com)")
+	parser.add_option("-p", "--pattern", dest="pattern",
+	                 help=u"Search for PATTERN (as Python Regular expressions)")
+	parser.add_option("-i", "--ignore-case",
+	                  dest="ignorecase", default=False, action="store_true",
+	                  help=u"Use re.IGNORECASE (with -p)")
+	parser.add_option("-l", "--level", dest="level", default=0,
+	                  help=u"Show logs with given level or higher")
+	parser.add_option("-c", "--color",
+	                  dest="color", default=False, action="store_true",
+	                  help=u"Show errors in ANSI color")
+	parser.add_option("-v", "--invert-match ",
+	                   dest="invert", default=False, action="store_true",
+	                   help=u"select non-matching blocks (with -p or -d)")
+
+	options, args = parser.parse_args()
+
+	domain = options.domain or None
+	email = options.email or None
+	label = email or domain or None
+
+	pattern = None
+	if options.pattern:
+		if options.ignorecase:
+			pattern = re.compile(options.pattern, re.IGNORECASE)
+		else:
+			pattern = re.compile(options.pattern)
+
+	if not len(args) or args[0] == "-":
+		infile = sys.stdin
+	else:
+		infile = open(args[0])
+
+	try:
+		search(infile, label, pattern,
+		       invert=options.invert,
+		       with_color=options.color,
+		       level=int(options.level))
+	except (SystemExit, KeyboardInterrupt), e:
+		sys.stdout.write("\n")
+		sys.exit(1)
+
+if __name__ == '__main__':
+	main()
+
