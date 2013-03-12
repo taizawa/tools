@@ -1,5 +1,5 @@
 #!/usr/local/bin/zsh
 
-find . -name \*.$1 | xargs grep $2
+find . -name \*.$1 | xargs grep -n $2
 
 exit 0

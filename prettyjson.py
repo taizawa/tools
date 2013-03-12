@@ -20,6 +20,6 @@ except Exception as e:
 	s = argvs[1]
 try:
 	s = json.loads(s.replace('\r\n', '\\r\\n'))
-	print(json.dumps(s, sort_keys = False, indent = 4))
+	print json.dumps(s, sort_keys = False, indent = 4).decode('utf-8')
 except Exception as e:
 	print e
